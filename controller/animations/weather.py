@@ -327,6 +327,10 @@ def init():
         thread.start()
         _started = True
 
+def activate():
+    global _t
+    _t = 0.0   # restart icon animation cleanly
+
 def frame(pixels, dt):
     global _t
     _ICON_FUNCS.get(_weather["icon"], _draw_sun)(_t)

@@ -208,6 +208,10 @@ def init():
     _last_hour   = -1
     _accumulator = 0.0
 
+def activate():
+    global _last_words
+    _last_words = ""   # force redraw on next frame
+
 def frame(pixels, dt):
     global _last_words, _last_hour, _accumulator
 

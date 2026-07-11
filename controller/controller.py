@@ -76,6 +76,11 @@ hold_triggered = False
 def _current_mode():
     return GROUPS[current_group]["modes"][group_mode_idx[current_group]]
 
+def _activate_mode():
+    mode = _current_mode()
+    if hasattr(mode, "activate"):
+        mode.activate()
+
 # ── Button handling ───────────────────────────────────────────────────────────
 
 def on_press():
@@ -102,7 +107,8 @@ def on_release():
         group  = GROUPS[current_group]
         modes  = group["modes"]
         group_mode_idx[current_group] = (group_mode_idx[current_group] + 1) % len(modes)
-        print(f"  → Mode: {_current_mode().NAME}")
+        _activate_mode()
+        print(f"  → Mode: {mode.NAME}")
 
 button = Button(BUTTON_PIN, pull_up=True, bounce_time=0.05, hold_time=0.8)
 button.when_pressed  = on_press
@@ -190,6 +196,8 @@ def main():
 
     last_time     = time.monotonic()
     _flash_pending = False
+
+    _activate_mode()
 
     while True:
         now = time.monotonic()
