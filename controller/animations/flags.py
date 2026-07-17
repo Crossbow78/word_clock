@@ -12,6 +12,7 @@ Dependencies: none beyond shared
 """
 
 import math
+import random
 from .shared import COLS, ROWS, xy
 
 FRAME_DELAY   = 0.04
@@ -22,8 +23,8 @@ NAME          = "Flags"
 WAVE_SPEED     = 0.8     # radians per second
 WAVE_AMPLITUDE = 0.0     # pixels of vertical displacement
 WAVE_FREQUENCY = 0.8     # spatial frequency (cycles across the strip)
-CYCLE_DURATION = 8.0     # seconds per flag (one full wave cycle)
-FADE_DURATION  = 2.0     # seconds for cross-fade between flags
+CYCLE_DURATION = 5.0     # seconds per flag (one full wave cycle)
+FADE_DURATION  = 1.5     # seconds for cross-fade between flags
 
 # ── Flag definitions ──────────────────────────────────────────────────────────
 # Each flag is a list of stripes.
@@ -37,7 +38,7 @@ FLAGS = [
         "name": "Netherlands",
         "axis": "h",   # horizontal stripes
         "stripes": [
-            (1/3, (193,   0,  42)),   # red
+            (1/3, (193,   0,  20)),   # red
             (2/3, (255, 255, 255)),   # white
             (1.0, ( 15,  20, 159)),   # blue
         ],
@@ -48,7 +49,7 @@ FLAGS = [
         "stripes": [
             (1/3, ( 10,  10,  10)),   # black
             (2/3, (253, 218,  36)),   # yellow
-            (1.0, (193,   0,  42)),   # red
+            (1.0, (193,   0,  20)),   # red
         ],
     },
     {
@@ -65,14 +66,14 @@ FLAGS = [
         "stripes": [
             (1/3, (  0,  35, 149)),   # blue
             (2/3, (255, 255, 255)),   # white
-            (1.0, (227,  15,  30)),   # red
+            (1.0, (227,  0,  20)),   # red
         ],
     },
     {
         "name": "Switzerland",
         "axis": "h",
         "stripes": [
-            (1.0, (255,   0,  40)),   # red background
+            (1.0, (255,   0,  20)),   # red background
         ],
         "cross": {
             "color": (255, 255, 255),
@@ -90,7 +91,7 @@ FLAGS = [
         "stripes": [
             (1/3, (  0,  43, 127)),   # blue
             (2/3, (252, 209,  22)),   # yellow
-            (1.0, (206,   0,  28)),   # red
+            (1.0, (206,   0,  20)),   # red
         ],
     },
     {
@@ -105,7 +106,7 @@ FLAGS = [
             "cx": 0.5,    # fraction of COLS
             "cy": 0.5,    # fraction of ROWS
             "r":  0.25,   # fraction of min(COLS, ROWS)
-            "color": (188,   0,  45),
+            "color": (196,   0,  20),
         },
     },
     {
@@ -130,13 +131,13 @@ FLAGS = [
         "axis": "h",
         "stripes": [
             (1/3, ( 10,  10,  10)),   # black
-            (2/3, (221,   0,   0)),   # red
+            (2/3, (221,   0,  10)),   # red
             (1.0, (255, 206,   0)),   # gold
         ],
     },
     {
         "name": "Italy",
-        "axis": "h",
+        "axis": "v",
         "stripes": [
             (1/3, (  0, 170,  30)),   # green
             (2/3, (255, 255, 255)),   # white
@@ -281,6 +282,11 @@ def init():
     _flag_time  = 0.0
     _fade_time  = 0.0
     _state      = "showing"
+
+def activate():
+    global _flag_index, _flag_time, _state
+    random.shuffle(FLAGS)
+    init()
 
 def frame(pixels, dt):
     global _t, _flag_index, _flag_time, _state, _fade_time

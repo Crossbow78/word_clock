@@ -19,10 +19,10 @@ NAME           = "Fire"
 TIME_SCALE     = 0.08
 
 # Spatial turbulence — lower = smoother, higher = choppier
-SPATIAL_SCALE  = 0.4
+SPATIAL_SCALE  = 0.1
 
-OCTAVES        = 3
-PERSISTENCE    = 0.55
+OCTAVES        = 2
+PERSISTENCE    = 1.5
 LACUNARITY     = 2.0
 
 # Gamma > 1 deepens the dark gaps between flames

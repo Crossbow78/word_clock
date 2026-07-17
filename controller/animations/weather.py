@@ -8,7 +8,7 @@ Layout:
 Temperature display (12px wide, right-aligned):
   [minus 2px][gap 1px][digit 3px][gap 1px][digit 3px][gap 1px][degree 1px]
   Single digit: right-aligned against degree pixel, minus area blank.
-  Colour gradient: 0°→blue, 20°→purple, 40°→red (clamped outside range).
+  Colour gradient: 0°→blue, 20°→yellow, 40°→red (clamped outside range).
 
 Dependencies: requests, Pillow (only if using GIF — not used here)
 """
@@ -221,14 +221,14 @@ def _draw_sun(t):
         for c in range(COLS):
             dist = math.sqrt((c-cx)**2 + (r-cy)**2)
             if dist < 2.5:
-                _buf[r][c] = scale((255,190,50), max(0.0, 1.0-dist/2.5) * 0.75)
+                _buf[r][c] = scale((255,180,45), max(0.0, 1.0-dist/2.5) * 0.75)
     for ray in range(8):
         angle = t + ray * math.pi/4
         for d in range(3, 5):
             ri = int(round(cy + math.sin(angle)*d))
             ci = int(round(cx + math.cos(angle)*d))
             if 0 <= ri < ROWS and 0 <= ci < COLS:
-                _buf[ri][ci] = scale((255,190,50), max(0.0, 1.0-(d-3)/2.0) * 0.45)
+                _buf[ri][ci] = scale((255,180,45), max(0.0, 1.0-(d-3)/2.0) * 0.45)
 
 # Fixed star positions — evenly distributed across the full 12×11 grid
 _STARS = [
@@ -293,15 +293,15 @@ def _draw_partly_cloudy(t):
     for r in range(ROWS):
         for c in range(COLS):
             dist = math.sqrt((c-cx)**2 + (r-cy)**2)
-            if dist < 1.8:
-                _buf[r][c] = scale((255,190,50), max(0.0, 1.0-dist/1.8)*0.75)
+            if dist < 2.0:
+                _buf[r][c] = scale((255,180,45), max(0.0, 1.0-dist/2.0)*0.75)
     for ray in range(8):
         angle = t + ray*math.pi/4
         for d in range(2, 4):
             ri = int(round(cy + math.sin(angle)*d))
             ci = int(round(cx + math.cos(angle)*d))
             if 0 <= ri < ROWS and 0 <= ci < COLS:
-                _buf[ri][ci] = scale((255,190,50), max(0.0, 1.0-(d-2)/2.0)*0.45)
+                _buf[ri][ci] = scale((255,180,45), max(0.0, 1.0-(d-2)/2.0)*0.45)
     _draw_cloud(CLOUD_CX + math.sin(t*0.4)*1.0, CLOUD_ROW + 2.0, brightness=0.95)
 
 _rain_drops = [{"c": random.uniform(1,7), "r": random.uniform(RAIN_START_ROW, ROWS)}
