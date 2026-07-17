@@ -1,18 +1,14 @@
 """
 animations/flags.py — Waving national flags
 
-Cycles through: Netherlands, Belgium, France, Japan, Switzerland, Spain.
-Each flag waves for one full cycle (~8 seconds) then cross-fades to the next.
-
-Flag stripes are defined as horizontal or vertical bands.
-Wave motion is a sine displacement per column with subpixel blending
-within stripes. Stripe boundaries are kept sharp to avoid colour mixing.
+Cycles through a collection of national flags.
+Each flag displays for CYCLE_DURATION seconds then cross-fades to the next.
+A horizontal brightness wave rolls across the flag to simulate fabric movement.
 
 Dependencies: none beyond shared
 """
 
 import math
-import random
 from .shared import COLS, ROWS, xy
 
 FRAME_DELAY   = 0.04
@@ -20,18 +16,15 @@ NAME          = "Flags"
 
 # ── Wave parameters ───────────────────────────────────────────────────────────
 
-WAVE_SPEED     = 0.8     # radians per second
-WAVE_AMPLITUDE = 0.0     # pixels of vertical displacement
-WAVE_FREQUENCY = 0.8     # spatial frequency (cycles across the strip)
-CYCLE_DURATION = 5.0     # seconds per flag (one full wave cycle)
-FADE_DURATION  = 1.5     # seconds for cross-fade between flags
+BRIGHTNESS_WAVE_SPEED = 1.2    # how fast the wave travels left→right
+BRIGHTNESS_WAVE_FREQ  = 1.0    # spatial frequency (cycles across the flag)
+BRIGHTNESS_MIN        = 0.6    # darkest point of the wave
+BRIGHTNESS_MAX        = 1.0    # brightest point
+
+CYCLE_DURATION = 5.0           # seconds per flag
+FADE_DURATION  = 1.5           # seconds for cross-fade between flags
 
 # ── Flag definitions ──────────────────────────────────────────────────────────
-# Each flag is a list of stripes.
-# Horizontal flags: axis="h", bands divide the ROWS vertically
-# Vertical flags:   axis="v", bands divide the COLS horizontally
-# Each band: (fraction_end, (R, G, B))
-# fraction_end is the upper boundary of this band as a 0–1 fraction of the axis
 
 FLAGS = [
     {
@@ -178,84 +171,42 @@ FLAGS = [
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _stripe_color(flag, norm_h, norm_v):
-    """
-    Return the base colour for a pixel at normalised position (norm_h, norm_v).
-    norm_h = row / ROWS, norm_v = col / COLS, both 0–1.
-    """
-    axis = flag.get("axis", "h")
-    pos  = norm_h if axis == "h" else norm_v
-
-    # Find which stripe this position falls in
+    axis  = flag.get("axis", "h")
+    pos   = norm_h if axis == "h" else norm_v
     color = flag["stripes"][-1][1]
     for frac, c in flag["stripes"]:
         if pos <= frac:
             color = c
             break
-
-    # Japan disc overlay
     if "disc" in flag:
-        d   = flag["disc"]
-        cx  = d["cx"]
-        cy  = d["cy"]
-        r   = d["r"] * min(COLS, ROWS)
-        dx  = (norm_v - cx) * COLS
-        dy  = (norm_h - cy) * ROWS
+        d  = flag["disc"]
+        r  = d["r"] * min(COLS, ROWS)
+        dx = (norm_v - d["cx"]) * COLS
+        dy = (norm_h - d["cy"]) * ROWS
         if math.sqrt(dx**2 + dy**2) <= r:
             color = d["color"]
-
-    # Switzerland cross overlay
     if "cross" in flag:
-        col_n, row_n = norm_v, norm_h
         for cs, ce, rs, re in flag["cross"]["rects"]:
-            if cs <= col_n <= ce and rs <= row_n <= re:
+            if cs <= norm_v <= ce and rs <= norm_h <= re:
                 color = flag["cross"]["color"]
                 break
-
     return color
 
 def _render_flag(flag, t):
-    """
-    Render a flag into a 2D buffer with wave displacement.
-    Returns buf[row][col] = (r, g, b).
-    """
+    """Render flag with horizontal brightness wave. Returns buf[row][col]."""
     buf = [[(0,0,0)] * COLS for _ in range(ROWS)]
-
     for col in range(COLS):
-        # Wave: vertical sine displacement for this column
-        wave = WAVE_AMPLITUDE * math.sin(
-            WAVE_FREQUENCY * (col / COLS) * math.pi * 2 - t * WAVE_SPEED
+        wave_brightness = BRIGHTNESS_MIN + (BRIGHTNESS_MAX - BRIGHTNESS_MIN) * (
+            math.sin(
+                col / COLS * math.pi * 2 * BRIGHTNESS_WAVE_FREQ
+                - t * BRIGHTNESS_WAVE_SPEED
+            ) * 0.5 + 0.5
         )
-
+        norm_v = (col + 0.5) / COLS
         for row in range(ROWS):
-            # Displaced row in float space
-            src_row = row + wave
-
-            # Clamp to grid bounds
-            src_row = max(0.0, min(ROWS - 1.0, src_row))
-
-            row0  = int(src_row)
-            row1  = min(row0 + 1, ROWS - 1)
-            blend = src_row - row0
-
-            # Sample pixel centres for even stripe distribution
-            norm_h0 = (row0 + 0.5) / ROWS
-            norm_h1 = (row1 + 0.5) / ROWS
-            norm_v  = (col  + 0.5) / COLS
-
-            c0 = _stripe_color(flag, norm_h0, norm_v)
-            c1 = _stripe_color(flag, norm_h1, norm_v)
-
-            # Only blend if both pixels are the same colour (within stripe)
-            # At stripe boundaries keep sharp by snapping to nearest
-            if c0 == c1:
-                color = c0
-            elif blend < 0.5:
-                color = c0
-            else:
-                color = c1
-
-            buf[row][col] = color
-
+            norm_h = (row + 0.5) / ROWS
+            color  = _stripe_color(flag, norm_h, norm_v)
+            buf[row][col] = tuple(int(c * wave_brightness) for c in color)
     return buf
 
 def _lerp_buf(buf_a, buf_b, t):
@@ -269,11 +220,11 @@ def _lerp_buf(buf_a, buf_b, t):
 
 # ── State ─────────────────────────────────────────────────────────────────────
 
-_t            = 0.0          # animation time
-_flag_index   = 0
-_flag_time    = 0.0          # time spent on current flag
-_state        = "showing"    # "showing" or "fading"
-_fade_time    = 0.0
+_t          = 0.0
+_flag_index = 0
+_flag_time  = 0.0
+_state      = "showing"
+_fade_time  = 0.0
 
 def init():
     global _t, _flag_index, _flag_time, _state, _fade_time
@@ -284,7 +235,6 @@ def init():
     _state      = "showing"
 
 def activate():
-    global _flag_index, _flag_time, _state
     random.shuffle(FLAGS)
     init()
 
@@ -301,17 +251,14 @@ def frame(pixels, dt):
         if _flag_time >= CYCLE_DURATION:
             _state     = "fading"
             _fade_time = 0.0
-
         buf = _render_flag(current_flag, _t)
 
     elif _state == "fading":
         _fade_time += dt
         progress    = min(1.0, _fade_time / FADE_DURATION)
-
         buf_a = _render_flag(current_flag, _t)
         buf_b = _render_flag(next_flag,    _t)
         buf   = _lerp_buf(buf_a, buf_b, progress)
-
         if progress >= 1.0:
             _flag_index = (_flag_index + 1) % len(FLAGS)
             _flag_time  = 0.0
