@@ -79,10 +79,6 @@ COLORS = [
     (255, 120,  40),
 ]
 
-DIM_FACTOR_DARK   = 0.12
-DIM_FACTOR_DIMMED = 0.50
-DIM_FACTOR_NORMAL = 1.00
-
 # ── Coordinate mapping ────────────────────────────────────────────────────────
 
 def _strip_index_to_xy(idx):
@@ -133,13 +129,6 @@ def _random_color():
 
 def _scale(color, factor):
     return tuple(max(0, min(255, int(c * factor))) for c in color)
-
-def _dim_factor(hour):
-    if hour >= 23 or hour <= 5:
-        return DIM_FACTOR_DARK
-    elif hour >= 19 or hour <= 7:
-        return DIM_FACTOR_DIMMED
-    return DIM_FACTOR_NORMAL
 
 def _minutes_word(minute):
     if   minute <  5: return "OCLOCK"
@@ -223,7 +212,6 @@ def frame(pixels, dt):
     now    = datetime.now()
     hour   = now.hour
     minute = now.minute
-    dim    = _dim_factor(hour)
     words  = _words_for_time(hour, minute)
     key    = ",".join(words)
 
@@ -244,6 +232,6 @@ def frame(pixels, dt):
 
     _shuffle_colors()
     for word in words:
-        _display_word(pixels, word, _scale(_random_color(), dim))
+        _display_word(pixels, word, _random_color())
 
     pixels.show()

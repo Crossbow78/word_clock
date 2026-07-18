@@ -33,7 +33,7 @@ import neopixel
 import argparse
 import signal
 import sys
-
+from datetime import datetime
 from gpiozero import Button
 
 from animations import (
@@ -46,7 +46,6 @@ from animations import (
 
 LED_PIN        = board.D12
 LED_COUNT      = 132
-LED_BRIGHTNESS = 0.8
 LED_ORDER      = neopixel.GRB
 BUTTON_PIN     = 17
 FRAME_DELAY    = 0.04
@@ -68,12 +67,37 @@ GROUPS = [
     },
 ]
 
+# ── Brightness  ────────────────────────────────────────────────────────
+
+_brightness_mode  = "auto"   # "auto" or "manual"
+_brightness_value = 0.8      # used in manual mode
+
+def _time_brightness():
+    hour = datetime.now().hour
+    if hour >= 23 or hour <= 5:    return 0.15
+    elif hour >= 19 or hour <= 8:  return 0.40
+    else:                          return 1.00
+
+def _effective_brightness():
+    if _brightness_mode == "auto":
+        return _time_brightness()
+    return _brightness_value
+
+def _set_brightness(value):
+    global _brightness_value, _brightness_mode
+    _brightness_value = max(0.0, min(1.0, value))
+    _brightness_mode = "manual"
+
+def _set_brightness_auto():
+    global _brightness_mode
+    _brightness_mode = "auto"
+
 # ── State ─────────────────────────────────────────────────────────────────────
 
 current_group      = 0
 group_mode_idx     = [0] * len(GROUPS)
 hold_triggered     = False
-_pending_advance   = None    # "mode" or "group" — set before transition runs
+_pending_advance   = None
 _slideshow_active  = False
 _slideshow_timer   = 0.0
 SLIDESHOW_INTERVAL = 30.0
@@ -84,7 +108,59 @@ def _current_mode():
 def _all_modes():
     return [m for g in GROUPS for m in g["modes"]]
 
-# ── Navigation actions ────────────────────────────────────────────────────────
+def _resolve_mode(name):
+    key = name.lower()
+    for gi, group in enumerate(GROUPS):
+        for mi, mode in enumerate(group["modes"]):
+            if mode.NAME.lower() == key:
+                return gi, mi
+    return None, None
+
+# ── API helper functions ──────────────────────────────────────────────────────
+
+def _set_mode_direct(gi, mi):
+    global current_group, _slideshow_active, _slideshow_timer, _pending_advance
+    current_group     = gi
+    group_mode_idx[gi] = mi
+    _slideshow_active = False
+    _slideshow_timer  = 0.0
+    _pending_advance  = "direct"
+
+def _slideshow_on():
+    global _slideshow_active, _slideshow_timer
+    _slideshow_active = True
+    _slideshow_timer  = 0.0
+
+def _slideshow_off():
+    global _slideshow_active, _slideshow_timer
+    _slideshow_active = False
+    _slideshow_timer  = 0.0
+
+def _set_slideshow_interval(seconds):
+    global SLIDESHOW_INTERVAL
+    SLIDESHOW_INTERVAL = max(1.0, min(60.0, float(seconds)))
+
+def _get_api_status(pixels):
+    return {
+        "group":      GROUPS[current_group]["name"],
+        "mode":       _current_mode().NAME,
+        "slideshow":  _slideshow_active,
+        "slideshow_interval": SLIDESHOW_INTERVAL,
+        "brightness": round(_effective_brightness(), 2),
+        "brightness_mode": _brightness_mode,
+    }
+
+def _get_api_modes():
+    return [
+        {
+            "name":    g["name"],
+            "modes":   [m.NAME for m in g["modes"]],
+            "current": g["modes"][group_mode_idx[i]].NAME,
+        }
+        for i, g in enumerate(GROUPS)
+    ]
+
+# ── Navigation actions ──────────────────────────────────────────────────────────────
 
 def _advance_mode():
     global _pending_advance
@@ -190,6 +266,10 @@ def parse_args():
         action="store_true",
         help="Start with slideshow mode enabled"
     )
+    parser.add_argument(
+        "--no-api",
+        action="store_true",
+        help="Disable the web API")
     return parser.parse_args()
 
 def _resolve_mode(name):
@@ -210,7 +290,7 @@ def main():
     pixels = neopixel.NeoPixel(
         LED_PIN,
         LED_COUNT,
-        brightness=LED_BRIGHTNESS,
+        brightness=_effective_brightness(),
         pixel_order=LED_ORDER,
         auto_write=False,
     )
@@ -250,6 +330,21 @@ def main():
         _slideshow_active = True
         print("  Slideshow enabled from command line")
 
+    import web_api
+    web_api.start_web_api(pixels, {
+        "get_status":        _get_api_status,
+        "get_modes":         _get_api_modes,
+        "resolve_mode":      _resolve_mode,
+        "set_mode_direct":   _set_mode_direct,
+        "do_single_click":   _do_single_click,
+        "advance_group":     _advance_group,
+        "slideshow_on":      _slideshow_on,
+        "slideshow_off":     _slideshow_off,
+        "set_slideshow_interval": _set_slideshow_interval,
+        "set_brightness": _set_brightness,
+        "set_brightness_auto": _set_brightness_auto,
+    })
+
     print(f"\nStarting in group : {GROUPS[current_group]['name']}")
     print(f"Starting in mode  : {_current_mode().NAME}")
     print("Single press -> next mode")
@@ -279,6 +374,7 @@ def main():
 
         mode  = _current_mode()
         delay = getattr(mode, "FRAME_DELAY", FRAME_DELAY)
+        pixels.brightness = _effective_brightness()
         mode.frame(pixels, dt)
         time.sleep(max(0.02, delay))
 

@@ -5,10 +5,10 @@ animations/spiral.py — Radar sweep spiral
 import math
 from .shared import COLS, ROWS, xy, hsv_to_rgb
 
-FRAME_DELAY    = 0.1
+FRAME_DELAY    = 0.05
 NAME           = "Spiral"
 
-ROTATION_SPEED = 0.06
+ROTATION_SPEED = 0.05
 NUM_ARMS       = 3
 ARM_WIDTH      = 0.4
 TRAIL_DECAY    = 0.2

@@ -9,6 +9,7 @@ Dependencies: none beyond shared
 """
 
 import math
+import random
 from .shared import COLS, ROWS, xy
 
 FRAME_DELAY   = 0.04
@@ -16,9 +17,9 @@ NAME          = "Flags"
 
 # ── Wave parameters ───────────────────────────────────────────────────────────
 
-BRIGHTNESS_WAVE_SPEED = 1.2    # how fast the wave travels left→right
-BRIGHTNESS_WAVE_FREQ  = 1.0    # spatial frequency (cycles across the flag)
-BRIGHTNESS_MIN        = 0.6    # darkest point of the wave
+BRIGHTNESS_WAVE_SPEED = 1.8    # how fast the wave travels left→right
+BRIGHTNESS_WAVE_FREQ  = 1.6    # spatial frequency (cycles across the flag)
+BRIGHTNESS_MIN        = 0.4    # darkest point of the wave
 BRIGHTNESS_MAX        = 1.0    # brightest point
 
 CYCLE_DURATION = 5.0           # seconds per flag
