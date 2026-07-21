@@ -39,7 +39,7 @@ from gpiozero import Button
 from animations import (
     wordclock, matrix, ripple, plasma, life, tetris_ai,
     lavalamp, sand, balls, flowfield, spiral,
-    snake, fire, weather, flags, chess, lightning
+    snake, fire, weather, flags, chess, lightning, presence
 )
 
 # ── Hardware ──────────────────────────────────────────────────────────────────
@@ -55,7 +55,7 @@ FRAME_DELAY    = 0.04
 GROUPS = [
     {
         "name":  "Current",
-        "modes": [wordclock, weather],
+        "modes": [wordclock, weather, presence],
     },
     {
         "name": "Animations",
