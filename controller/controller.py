@@ -37,8 +37,8 @@ from datetime import datetime
 from gpiozero import Button
 
 from animations import (
-    wordclock, matrix, ripple, plasma, life, tetris_ai,
-    lavalamp, sand, balls, flowfield, spiral,
+    wordclock, matrix, ripple, plasma, life, tetris_ai, othello,
+    lavalamp, sand, balls, flowfield, spiral, connect4
     snake, fire, weather, flags, chess, lightning, presence
 )
 
@@ -63,7 +63,7 @@ GROUPS = [
     },
     {
         "name":  "Games",
-        "modes": [tetris_ai, snake, chess],
+        "modes": [tetris_ai, snake, othello, chess, connect4],
     },
 ]
 

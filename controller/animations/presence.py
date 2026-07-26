@@ -5,8 +5,9 @@ Pings configured IP addresses periodically and displays presence
 on the LED grid. Each family member has a fixed grid position,
 colour and IP address.
 
-Present  — bright centre pixel + pulsing ring expanding outward
-Absent   — dim centre pixel only, static
+Present      — bright centre pixel + steady disc around it, pulsating in brightness
+Transitioning — one missed ping in a row; visualized identically to present
+Absent       — two or more missed pings in a row; dim centre pixel only, static
 
 Configuration: edit FAMILY_MEMBERS below.
 
@@ -26,18 +27,21 @@ NAME           = "Presence"
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
-PING_INTERVAL  = 60.0    # seconds between ping rounds
+PING_INTERVAL  = 40.0    # seconds between ping rounds
 PING_TIMEOUT   = 2.0     # seconds to wait for ping reply
+MISS_THRESHOLD = 2       # consecutive missed pings before considered fully absent
 
 # Brightness levels
 PRESENT_CENTRE = 1.0     # centre pixel when present
-PRESENT_RING   = 0.3     # peak ring brightness when present
-ABSENT_DIM     = 0.15    # centre pixel brightness when absent
+ABSENT_DIM     = 0.2     # centre pixel brightness when absent
 
-# Ring animation
-RING_SPEED     = 1.3     # radius units per second
-RING_MAX       = 3.0     # maximum ring radius before reset
-RING_WIDTH     = 0.8     # thickness of the ring
+# Disc pulse animation
+DISC_RADIUS    = 2.8     # radius of the steady disc around each present member
+PULSE_MAX      = 0.3     # peak disc brightness
+PULSE_MIN      = 0.04    # trough disc brightness
+PULSE_PERIOD   = 3.0     # seconds per pulse cycle
+PULSE_SHAPE    = "fast_rise_slow_fade"  # "sine" or "fast_rise_slow_fade"
+PULSE_ATTACK   = 0.2     # fraction of cycle spent rising (fast_rise_slow_fade only)
 
 # Fade transition speed (brightness units per second)
 FADE_SPEED     = 0.2
@@ -52,6 +56,21 @@ FAMILY_MEMBERS = [
     (  2,  1,  ( 80,  10, 255),  "192.168.1.19", "Femke"),
 ]
 
+def _pulse_value(phase):
+    """Return 0..1 pulse level for a phase (0..1 fraction of cycle)."""
+    frac = phase % 1.0
+    if PULSE_SHAPE == "fast_rise_slow_fade":
+        if frac < PULSE_ATTACK:
+            # fast rise: ease-out
+            x = frac / PULSE_ATTACK
+            return math.sin(x * math.pi / 2)
+        else:
+            # slow fade: ease-in decay back to 0
+            x = (frac - PULSE_ATTACK) / (1.0 - PULSE_ATTACK)
+            return (1.0 - x) ** 2
+    # default: sine, 0..1
+    return (math.sin(frac * 2 * math.pi) + 1) / 2
+
 # ── Member state ──────────────────────────────────────────────────────────────
 
 class _Member:
@@ -61,13 +80,19 @@ class _Member:
         self.color     = color
         self.ip        = ip
         self.label     = label
-        self.present   = False
+        self.state     = "absent"      # "present" | "transitioning" | "absent"
+        self.miss_count = 0            # consecutive missed pings
         self.brightness = ABSENT_DIM   # current brightness (fades smoothly)
-        self.ring_t    = 0.0           # current ring radius
-        self.ring_phase = random.uniform(0, math.pi * 2)  # stagger ring offsets
+        self.pulse_t    = 0.0          # elapsed time within the pulse cycle
+        self.pulse_phase = random.uniform(0.0, 1.0)  # stagger pulse offsets (fraction of cycle)
+
+    @property
+    def visually_present(self):
+        # Transitioning looks identical to present — only true "absent" dims
+        return self.state in ("present", "transitioning")
 
     def target_brightness(self):
-        return PRESENT_CENTRE if self.present else ABSENT_DIM
+        return PRESENT_CENTRE if self.visually_present else ABSENT_DIM
 
     def update(self, dt):
         # Fade brightness toward target
@@ -79,35 +104,30 @@ class _Member:
         else:
             self.brightness += step * (1 if diff > 0 else -1)
 
-        # Advance ring only when present
-        if self.present:
-            self.ring_t += dt
-            #self.ring_r += RING_SPEED * dt
-            #if self.ring_r > RING_MAX:
-            #    self.ring_r = 0.0
+        # Advance pulse whenever visually present (present or transitioning)
+        if self.visually_present:
+            self.pulse_t += dt
 
     def draw(self, buf):
         # Centre pixel
         buf[self.row][self.col] = scale(self.color, self.brightness)
 
-        # Pulsing ring — only when present
-        if self.present and self.brightness > ABSENT_DIM:
-            effective_r = ((self.ring_t * RING_SPEED + self.ring_phase) % RING_MAX)
+        # Pulsating disc — only when visually present
+        if self.visually_present and self.brightness > ABSENT_DIM:
+            phase   = (self.pulse_t / PULSE_PERIOD) + self.pulse_phase
+            level   = _pulse_value(phase)                        # 0..1
+            disc_bri = (PULSE_MIN + (PULSE_MAX - PULSE_MIN) * level) * (self.brightness / PRESENT_CENTRE)
             for r in range(ROWS):
                 for c in range(COLS):
                     if r == self.row and c == self.col:
                         continue
-                    dist  = math.sqrt((c - self.col)**2 + (r - self.row)**2)
-                    delta = abs(dist - effective_r)
-                    if delta < RING_WIDTH:
-                        falloff  = (1 + math.cos(math.pi * delta / RING_WIDTH)) / 2
-                        fade     = 1.0 - (effective_r / RING_MAX)
-                        ring_bri = PRESENT_RING * falloff * fade * (self.brightness / PRESENT_CENTRE)
+                    dist = math.sqrt((c - self.col) ** 2 + (r - self.row) ** 2)
+                    if dist <= DISC_RADIUS:
                         existing = buf[r][c]
                         buf[r][c] = (
-                            min(255, existing[0] + int(self.color[0] * ring_bri)),
-                            min(255, existing[1] + int(self.color[1] * ring_bri)),
-                            min(255, existing[2] + int(self.color[2] * ring_bri)),
+                            min(255, existing[0] + int(self.color[0] * disc_bri)),
+                            min(255, existing[1] + int(self.color[1] * disc_bri)),
+                            min(255, existing[2] + int(self.color[2] * disc_bri)),
                         )
 
 # ── Ping thread ───────────────────────────────────────────────────────────────
@@ -121,12 +141,23 @@ def _ping_all():
         for member in _members:
             try:
                 result = ping3.ping(member.ip, timeout=PING_TIMEOUT)
-                member.present = isinstance(result, float)
-                status = "present" if member.present else "absent"
-                print(f"  Presence [{member.label}] {member.ip}: {status}")
+                got_reply = isinstance(result, float)
             except Exception as e:
                 print(f"  Presence [{member.label}] ping error: {e}")
-                member.present = False
+                got_reply = False
+
+            if got_reply:
+                # A reply can never be a false positive — go straight to present
+                member.state = "present"
+                member.miss_count = 0
+            else:
+                member.miss_count += 1
+                if member.miss_count >= MISS_THRESHOLD:
+                    member.state = "absent"
+                else:
+                    member.state = "transitioning"
+
+            print(f"  Presence [{member.label}] {member.ip}: {member.state}")
         _time.sleep(PING_INTERVAL)
 
 # ── Module interface ──────────────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 """
-animations/chess.py — Chess with minimax AI (depth 2 + alpha-beta)
+animations/chess.py — Chess with time-bounded minimax AI (iterative deepening + alpha-beta)
 
 Two AI players play a full game of chess on an 8×8 board.
 Pieces are colour-coded by type, brightness indicates player.
@@ -39,10 +39,13 @@ CAP_BLACK_ROWS   = list(range(0, 5))     # rows 0–4 for black captures
 
 # ── Timing ────────────────────────────────────────────────────────────────────
 
-MOVE_DELAY       = 2.5    # seconds between moves (gives CPU breathing room)
+MOVE_DELAY       = 1.0    # seconds between moves (gives CPU breathing room)
 ANIM_FLASH_TIME  = 0.15   # duration of each flash step
 GAME_END_PAUSE   = 3.0    # pause at checkmate/stalemate before restart
-THINK_DEPTH      = 2      # minimax depth (2 = fast, 3 = slower but stronger)
+
+THINK_TIME_MS        = 1500  # base thinking budget per move (milliseconds)
+THINK_TIME_JITTER_MS = 500   # +/- random variation per move, for a bit of personality
+MAX_DEPTH            = 6     # hard cap on search depth regardless of time left
 
 # ── Piece colours ─────────────────────────────────────────────────────────────
 # Bright = white player, dim = black player (factor applied to color)
@@ -201,19 +204,28 @@ def _evaluate(board):
         score += val if p[1] == "W" else -val
     return score
 
-def _minimax(board, depth, alpha, beta, maximising):
+class _TimeUp(Exception):
+    """Raised to unwind the search once the thinking-time budget is spent."""
+    pass
+
+def _minimax(board, depth, alpha, beta, maximising, deadline=float("inf")):
+    if time.monotonic() >= deadline:
+        raise _TimeUp()
+
     color = "W" if maximising else "B"
     moves = _legal_moves(board, color)
 
     if depth == 0 or not moves:
         return _evaluate(board), None
 
+    # Shuffle first so ties in move_priority (and in alpha-beta best-so-far
+    # comparisons) break differently game to game — an easy hook for variation.
+    random.shuffle(moves)
+
     # Move ordering: captures first
     def move_priority(m):
         return 0 if board[m[1]] is not None else 1
 
-    # Introduce a bit of randomness
-    #random.shuffle(moves)
     moves.sort(key=move_priority)
 
     best_move = moves[0]
@@ -221,7 +233,7 @@ def _minimax(board, depth, alpha, beta, maximising):
         best = -999999
         for move in moves:
             nb  = _apply_move(board, move)
-            val, _ = _minimax(nb, depth-1, alpha, beta, False)
+            val, _ = _minimax(nb, depth-1, alpha, beta, False, deadline)
             if val > best:
                 best, best_move = val, move
             alpha = max(alpha, best)
@@ -231,12 +243,34 @@ def _minimax(board, depth, alpha, beta, maximising):
         best = 999999
         for move in moves:
             nb  = _apply_move(board, move)
-            val, _ = _minimax(nb, depth-1, alpha, beta, True)
+            val, _ = _minimax(nb, depth-1, alpha, beta, True, deadline)
             if val < best:
                 best, best_move = val, move
             beta = min(beta, best)
             if beta <= alpha: break
         return best, best_move
+
+def _search(board, maximising, time_budget_ms):
+    """Iterative-deepening search bounded by a thinking-time budget (ms).
+
+    Depth 1 always completes fully so a legal move is guaranteed even with
+    a tiny or already-expired budget; deeper iterations are cut off by
+    _TimeUp once the budget runs out, falling back to the last completed
+    depth's best move.
+    """
+    _, best_move = _minimax(board, 1, -999999, 999999, maximising)
+
+    deadline = time.monotonic() + time_budget_ms / 1000.0
+    depth = 2
+    while depth <= MAX_DEPTH:
+        try:
+            _, move = _minimax(board, depth, -999999, 999999, maximising, deadline)
+        except _TimeUp:
+            break
+        if move is not None:
+            best_move = move
+        depth += 1
+    return best_move
 
 # ── Rendering ─────────────────────────────────────────────────────────────────
 
@@ -354,7 +388,9 @@ def frame(pixels, dt):
             _accumulator = 0.0
             return
 
-        _, move = _minimax(_board_state, THINK_DEPTH, -999999, 999999, _turn == "W")
+        budget = THINK_TIME_MS + random.randint(-THINK_TIME_JITTER_MS, THINK_TIME_JITTER_MS)
+        budget = max(50, budget)
+        move = _search(_board_state, _turn == "W", budget)
         if move is None:
             _state = "game_over"
             _accumulator = 0.0
