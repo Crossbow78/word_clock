@@ -20,7 +20,7 @@ NAME        = "Connect Four"
 # ── Layout parameters ─────────────────────────────────────────────────────────
 
 BOARD_COL = 2     # leftmost column of the 7-wide board
-BOARD_ROW = 1     # topmost row of the 6-tall board
+BOARD_ROW = 2     # topmost row of the 6-tall board
 TURN_ROW  = 0
 
 N_COLS = 7
@@ -33,15 +33,15 @@ FALL_STEP_TIME   = 0.04   # seconds per row of fall animation
 LANDING_FLASH    = 0.15   # duration of the landed-disc flash
 GAME_END_PAUSE   = 4.0    # pause at win/draw before restart
 
-THINK_TIME_MS        = 1250   # base thinking budget per move (milliseconds)
-THINK_TIME_JITTER_MS = 250   # +/- random variation per move, for a bit of personality
+THINK_TIME_MS        = 1800   # base thinking budget per move (milliseconds)
+THINK_TIME_JITTER_MS = 400   # +/- random variation per move, for a bit of personality
 MAX_DEPTH            = 8     # hard cap on search depth regardless of time left
 
 # ── Colours ───────────────────────────────────────────────────────────────────
 
-COLOR_R      = (220,  40,  30)   # red player
-COLOR_Y      = (220, 170,  20)   # yellow player
-EMPTY_COLOR  = (  0,  20,  40)   # board felt (dark blue)
+COLOR_R      = (255,  30,  10)   # red player
+COLOR_Y      = (255, 190,  10)   # yellow player
+EMPTY_COLOR  = (  0,  10,  30)   # board felt (dark blue)
 FLASH_COLOR  = (255, 255, 255)
 TURN_ON      = (255, 255, 255)
 TURN_OFF     = (  0,   0,   0)
@@ -201,6 +201,59 @@ def _minimax(board, depth, alpha, beta, maximising, deadline=float("inf")):
             if beta <= alpha: break
         return best, best_move
 
+def _immediate_win_count(board, color):
+    """How many legal moves would let `color` win right now."""
+    count = 0
+    for col in _legal_moves(board):
+        nb, _ = _apply_move(board, col, color)
+        if _check_win(nb, color):
+            count += 1
+    return count
+
+def _root_search(board, maximising, depth, deadline):
+    """Like _minimax, but evaluates every root move fully (no pruning at
+    the root) so ties at the optimal value can be broken sensibly rather
+    than by whichever sibling alpha-beta happened to visit first.
+    """
+    if time.monotonic() >= deadline:
+        raise _TimeUp()
+
+    moves = _legal_moves(board)
+    if not moves:
+        return None
+
+    random.shuffle(moves)
+    centre = N_COLS // 2
+    moves.sort(key=lambda c: abs(c - centre))
+
+    color = "R" if maximising else "Y"
+    opp   = "Y" if color == "R" else "R"
+
+    results = []
+    for col in moves:
+        nb, _ = _apply_move(board, col, color)
+        val, _ = _minimax(nb, depth - 1, -9999999, 9999999, not maximising, deadline)
+        results.append((col, val))
+
+    best_val = max(v for _, v in results) if maximising else min(v for _, v in results)
+    tied = [c for c, v in results if v == best_val]
+    if len(tied) == 1:
+        return tied[0]
+
+    # Secondary tie-break: among equally-optimal moves (this matters most
+    # in a lost position, where every move is "you lose next turn" and the
+    # raw score can't distinguish them) prefer leaving the opponent with
+    # the fewest immediate winning replies — makes the AI visibly block
+    # one threat instead of ignoring all of them, even when the loss
+    # itself is unavoidable.
+    def opp_threats(col):
+        nb, _ = _apply_move(board, col, color)
+        return _immediate_win_count(nb, opp)
+
+    min_threats = min(opp_threats(c) for c in tied)
+    best_tied   = [c for c in tied if opp_threats(c) == min_threats]
+    return random.choice(best_tied)
+
 def _search(board, maximising, time_budget_ms):
     """Iterative-deepening search bounded by a thinking-time budget (ms).
 
@@ -209,13 +262,13 @@ def _search(board, maximising, time_budget_ms):
     _TimeUp once the budget runs out, falling back to the last completed
     depth's best move.
     """
-    _, best_move = _minimax(board, 1, -9999999, 9999999, maximising)
+    best_move = _root_search(board, maximising, 1, float("inf"))
 
     deadline = time.monotonic() + time_budget_ms / 1000.0
     depth = 2
     while depth <= MAX_DEPTH:
         try:
-            _, move = _minimax(board, depth, -9999999, 9999999, maximising, deadline)
+            move = _root_search(board, maximising, depth, deadline)
         except _TimeUp:
             break
         if move is not None:

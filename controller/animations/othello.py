@@ -33,13 +33,13 @@ TURN_COL_W  = 11
 
 # ── Timing ────────────────────────────────────────────────────────────────────
 
-MOVE_DELAY      = 2.0     # seconds between moves
+MOVE_DELAY      = 1.0     # seconds between moves
 PASS_PAUSE      = 1.2     # seconds to show a "pass" flash
 PLACE_FLASH     = 0.15    # duration of the placed-disc flash
 FLIP_STEP_TIME  = 0.08    # time between each cascading flip step
 GAME_END_PAUSE  = 4.0     # pause at game over before restart
 
-THINK_TIME_MS        = 1250  # base thinking budget per move (milliseconds)
+THINK_TIME_MS        = 1750  # base thinking budget per move (milliseconds)
 THINK_TIME_JITTER_MS = 250   # +/- random variation per move, for a bit of personality
 MAX_DEPTH            = 8     # hard cap on search depth regardless of time left
 

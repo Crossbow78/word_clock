@@ -38,7 +38,7 @@ from gpiozero import Button
 
 from animations import (
     wordclock, matrix, ripple, plasma, life, tetris_ai, othello,
-    lavalamp, sand, balls, flowfield, spiral, connect4,
+    lavalamp, sand, balls, flowfield, spiral, connect4, lightsout,
     snake, fire, weather, flags, chess, lightning, presence
 )
 
@@ -63,7 +63,7 @@ GROUPS = [
     },
     {
         "name":  "Games",
-        "modes": [tetris_ai, snake, othello, chess, connect4],
+        "modes": [tetris_ai, snake, othello, chess, connect4, lightsout],
     },
 ]
 

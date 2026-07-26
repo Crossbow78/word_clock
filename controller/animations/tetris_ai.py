@@ -8,7 +8,7 @@ import copy
 from .shared import COLS, ROWS, xy
 
 FRAME_DELAY      = 0.03
-NAME             = "Tetris AI"
+NAME             = "Tetris"
 
 FALL_DELAY       = 0.10
 SLIDE_DELAY      = 0.10
