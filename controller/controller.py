@@ -11,7 +11,7 @@ Button behaviour:
 
 Groups:
   Current:    Word Clock, Weather
-  Games:      Tetris AI, Snake, Chess
+  Games:      Tetris AI, Snake, Chess, Othello, Connect Four, Lights Out
   Animations: Matrix Rain, Ripple, Fire, Plasma, Game of Life, Lava Lamp,
               Sand, Bouncing Balls, Flow Field, Spiral, Flags
 
@@ -37,9 +37,10 @@ from datetime import datetime
 from gpiozero import Button
 
 from animations import (
-    wordclock, matrix, ripple, plasma, life, tetris_ai, othello,
-    lavalamp, sand, balls, flowfield, spiral, connect4, lightsout,
-    snake, fire, weather, flags, chess, lightning, presence
+    wordclock, matrix, ripple, plasma, life, tetris_ai,
+    lavalamp, sand, balls, flowfield, spiral,
+    snake, fire, weather, flags, chess, lightning, presence,
+    othello, connect4, lightsout
 )
 
 # ── Hardware ──────────────────────────────────────────────────────────────────
@@ -63,7 +64,7 @@ GROUPS = [
     },
     {
         "name":  "Games",
-        "modes": [tetris_ai, snake, othello, chess, connect4, lightsout],
+        "modes": [tetris_ai, snake, chess, othello, connect4, lightsout],
     },
 ]
 
@@ -159,6 +160,53 @@ def _get_api_modes():
         }
         for i, g in enumerate(GROUPS)
     ]
+
+# ── Module parameters (settings panel) ─────────────────────────────────────
+
+def _module_by_name(name):
+    key = name.lower()
+    for mode in _all_modes():
+        if mode.NAME.lower() == key:
+            return mode
+    return None
+
+def _get_params_tree():
+    """Group hierarchy mirroring GROUPS, flagging which modules have an
+    adjustable-parameters panel — lets the web UI grey out ones that don't
+    while still showing the full group/mode structure."""
+    return [
+        {
+            "name": g["name"],
+            "modes": [
+                {"name": m.NAME, "has_params": hasattr(m, "PARAMS")}
+                for m in g["modes"]
+            ],
+        }
+        for g in GROUPS
+    ]
+
+def _list_module_params(name):
+    mod = _module_by_name(name)
+    if mod is None or not hasattr(mod, "get_params"):
+        return []
+    return mod.get_params()
+
+def _set_module_param(name, key, value):
+    mod = _module_by_name(name)
+    if mod is None or not hasattr(mod, "set_param"):
+        raise ValueError(f"'{name}' has no adjustable parameters")
+    mod.set_param(key, value)
+
+def _reset_module(name):
+    """Force a module to re-run init() with its current parameter values —
+    an explicit, opt-in way to restart a module's internal state (fresh
+    blobs/particles/grid/etc.), independent of the normal mode-switch flow
+    which deliberately leaves state untouched so animations resume where
+    they left off."""
+    mod = _module_by_name(name)
+    if mod is None or not hasattr(mod, "init"):
+        raise ValueError(f"'{name}' has no init() to reset")
+    mod.init()
 
 # ── Navigation actions ──────────────────────────────────────────────────────────────
 
@@ -343,6 +391,10 @@ def main():
         "set_slideshow_interval": _set_slideshow_interval,
         "set_brightness": _set_brightness,
         "set_brightness_auto": _set_brightness_auto,
+        "get_params_tree":   _get_params_tree,
+        "list_module_params": _list_module_params,
+        "set_module_param":  _set_module_param,
+        "reset_module":      _reset_module,
     })
 
     print(f"\nStarting in group : {GROUPS[current_group]['name']}")

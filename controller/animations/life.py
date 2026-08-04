@@ -3,14 +3,17 @@ animations/life.py — Conway's Game of Life
 """
 
 import random
-from .shared import COLS, ROWS, xy
+from .shared import COLS, ROWS, xy, INT, FLOAT, make_param_store
 
 FRAME_DELAY      = 0.15
 NAME             = "Game of Life"
 
-SEED_DENSITY     = 0.4
-MAX_AGE          = 8
-STAGNATION_LIMIT = 8
+PARAMS = [
+    ("seed_density",     FLOAT(0.1, 0.9), 0.4),   # fraction of cells alive on reseed
+    ("max_age",          INT(2, 20),      8),     # generations before a cell's colour stops darkening
+    ("stagnation_limit", INT(2, 30),      8),     # generations unchanged before reseeding
+]
+_params, get_params, set_param = make_param_store(PARAMS)
 
 AGE_COLORS = [
     (180, 255, 180),
@@ -24,7 +27,7 @@ AGE_COLORS = [
 ]
 
 def _make_grid():
-    return [[1 if random.random() < SEED_DENSITY else 0
+    return [[1 if random.random() < _params["seed_density"] else 0
              for _ in range(COLS)] for _ in range(ROWS)]
 
 def _count_neighbours(grid, row, col):
@@ -37,13 +40,14 @@ def _count_neighbours(grid, row, col):
     return count
 
 def _next_generation(grid):
+    max_age = _params["max_age"]
     new = [[0]*COLS for _ in range(ROWS)]
     for r in range(ROWS):
         for c in range(COLS):
             n     = _count_neighbours(grid, r, c)
             alive = grid[r][c] > 0
             if alive and n in (2, 3):
-                new[r][c] = min(grid[r][c] + 1, MAX_AGE)
+                new[r][c] = min(grid[r][c] + 1, max_age)
             elif not alive and n == 3:
                 new[r][c] = 1
     return new
@@ -81,7 +85,7 @@ def frame(pixels, dt):
         _stagnation = 0
     _prev_grid = _grid
 
-    if _population(next_grid) == 0 or _stagnation >= STAGNATION_LIMIT:
+    if _population(next_grid) == 0 or _stagnation >= _params["stagnation_limit"]:
         next_grid   = _make_grid()
         _stagnation = 0
 

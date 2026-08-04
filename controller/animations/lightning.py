@@ -15,21 +15,25 @@ States:
 
 import random
 import time as _time
-from .shared import COLS, ROWS, xy, scale
+from .shared import COLS, ROWS, xy, scale, INT, FLOAT, make_param_store
 
 FRAME_DELAY = 0.03
 NAME        = "Lightning"
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
+PARAMS = [
+    ("bg_flicker",     FLOAT(0.0, 0.5),  0.15),  # random brightness range around the background base
+    ("calm_min",       FLOAT(0.5, 20.0), 2.0),   # shortest gap between strikes (seconds)
+    ("calm_max",       FLOAT(0.5, 20.0), 8.0),   # longest gap between strikes (seconds)
+    ("branch_chance",  FLOAT(0.0, 1.0),  0.6),   # chance a bolt spawns a side branch
+    ("branch_max_len", INT(1, 8),        3),     # longest possible branch
+]
+_params, get_params, set_param = make_param_store(PARAMS)
+
 # Background flicker
 BG_COLOR     = (50, 20, 0)     # dark orange base
-BG_FLICKER   = 0.15            # random brightness range around base
 BG_SMOOTH    = 0.10            # drift speed toward new target (0=frozen, 1=instant)
-
-# Idle period between strikes (seconds)
-CALM_MIN     = 2.0
-CALM_MAX     = 8.0
 
 # Bolt growth
 GROW_DELAY   = 0.03            # seconds per row while growing
@@ -50,10 +54,6 @@ FLASH_STEPS = [
     (0.00, 0.00),
 ]
 
-# Branch probability and max length
-BRANCH_CHANCE  = 0.6
-BRANCH_MAX_LEN = 3
-
 # ── Bolt generation ───────────────────────────────────────────────────────────
 
 def _gen_bolt():
@@ -66,13 +66,13 @@ def _gen_bolt():
     return path
 
 def _gen_branch(bolt_path):
-    if random.random() > BRANCH_CHANCE or len(bolt_path) < 4:
+    if random.random() > _params["branch_chance"] or len(bolt_path) < 4:
         return []
     start_idx = random.randint(2, len(bolt_path) - 3)
     col, row  = bolt_path[start_idx]
     branch    = []
     direction = random.choice([-1, 1])
-    length    = random.randint(2, BRANCH_MAX_LEN)
+    length    = random.randint(2, _params["branch_max_len"])
     for i in range(length):
         col += direction
         row += 1
@@ -89,9 +89,10 @@ _bg_brightness = [
 ]
 
 def _draw_bg(pixels):
+    flicker = _params["bg_flicker"]
     for r in range(ROWS):
         for c in range(COLS):
-            target = random.uniform(0.15 - BG_FLICKER * 0.5, 0.15 + BG_FLICKER)
+            target = random.uniform(0.15 - flicker * 0.5, 0.15 + flicker)
             _bg_brightness[r][c] += (target - _bg_brightness[r][c]) * BG_SMOOTH
             pixels[xy(c, r)] = scale(BG_COLOR, max(0.0, _bg_brightness[r][c]))
 
@@ -103,6 +104,11 @@ def _draw_bolt(pixels, bolt, branch, brightness):
         pixels[xy(c, r)] = scale(BOLT_HEAD, brightness)
     for col, row in branch:
         pixels[xy(col, row)] = scale(BOLT_BRANCH, brightness * 0.7)
+
+
+def _random_calm():
+    lo, hi = sorted((_params["calm_min"], _params["calm_max"]))
+    return random.uniform(lo, hi)
 
 # ── State ─────────────────────────────────────────────────────────────────────
 
@@ -120,7 +126,7 @@ def init():
     global _state, _accumulator, _calm_until
     _state       = "idle"
     _accumulator = 0.0
-    _calm_until  = _time.monotonic() + random.uniform(CALM_MIN, CALM_MAX)
+    _calm_until  = _time.monotonic() + _random_calm()
 
 def frame(pixels, dt):
     global _state, _accumulator, _calm_until
@@ -177,6 +183,6 @@ def frame(pixels, dt):
         _draw_bg(pixels)
         pixels.show()
         if _accumulator >= 0.3:
-            _calm_until  = _time.monotonic() + random.uniform(CALM_MIN, CALM_MAX)
+            _calm_until  = _time.monotonic() + _random_calm()
             _state       = "idle"
             _accumulator = 0.0

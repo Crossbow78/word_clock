@@ -10,18 +10,19 @@ Dependencies: noise
 
 import math
 from noise import pnoise2
-from .shared import COLS, ROWS, xy
+from .shared import COLS, ROWS, xy, FLOAT, INT, make_param_store
 
 FRAME_DELAY    = 0.05
 NAME           = "Fire"
 
-# How fast the fire evolves
-TIME_SCALE     = 0.08
+# Runtime-adjustable via the web UI's Module Settings panel
+PARAMS = [
+    ("time_scale",    FLOAT(0.01, 0.5), 0.10),   # how fast the fire evolves
+    ("spatial_scale", FLOAT(0.02, 0.5), 0.10),   # turbulence — lower=smoother, higher=choppier
+    ("octaves",       INT(1, 6),        2),      # Perlin noise octaves
+]
+_params, get_params, set_param = make_param_store(PARAMS)
 
-# Spatial turbulence — lower = smoother, higher = choppier
-SPATIAL_SCALE  = 0.1
-
-OCTAVES        = 2
 PERSISTENCE    = 1.5
 LACUNARITY     = 2.0
 
@@ -63,9 +64,9 @@ def frame(pixels, dt):
         for row in range(ROWS):
             # Sample Perlin noise: x = column, y = time
             raw = pnoise2(
-                col * SPATIAL_SCALE,
-                _t + row * SPATIAL_SCALE * 0.5,
-                octaves=OCTAVES,
+                col * _params["spatial_scale"],
+                _t + row * _params["spatial_scale"] * 0.5,
+                octaves=_params["octaves"],
                 persistence=PERSISTENCE,
                 lacunarity=LACUNARITY,
             )
@@ -85,4 +86,4 @@ def frame(pixels, dt):
             pixels[xy(col, row)] = _palette(intensity)
 
     pixels.show()
-    _t += TIME_SCALE
+    _t += _params["time_scale"]

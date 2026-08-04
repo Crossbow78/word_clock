@@ -3,17 +3,21 @@ animations/sand.py — Falling sand simulation (non-blocking state machine)
 """
 
 import random
-from .shared import COLS, ROWS, xy
+from .shared import COLS, ROWS, xy, FLOAT, make_param_store
 
 FRAME_DELAY    = 0.04
 NAME           = "Sand"
 
+PARAMS = [
+    ("spawn_chance", FLOAT(0.05, 1.0),  0.6),    # chance per frame to spawn a new grain
+    ("full_pause",   FLOAT(0.0, 3.0),   0.8),    # seconds the full grid holds before fading
+    ("fade_delay",   FLOAT(0.01, 0.2),  0.04),   # seconds between fade steps
+]
+_params, get_params, set_param = make_param_store(PARAMS)
+
 ROWS_EXTRA     = 4
 ROWS_LOGICAL   = ROWS + ROWS_EXTRA
-SPAWN_CHANCE   = 0.6
 FADE_STEPS     = 20
-FADE_DELAY     = 0.04
-FULL_PAUSE     = 0.8
 RAIN_START_ROW = ROWS_EXTRA
 
 GRAIN_COLORS = [
@@ -101,7 +105,7 @@ def frame(pixels, dt):
 
     if _state == "filling":
         # Spawn a new grain
-        if random.random() < SPAWN_CHANCE:
+        if random.random() < _params["spawn_chance"]:
             col = random.randint(4, 7)
             if _grid[0][col] is None:
                 _falling.append(_Grain(col, random.choice(GRAIN_COLORS)))
@@ -120,13 +124,13 @@ def frame(pixels, dt):
             _accumulator = 0.0
 
     elif _state == "full_pause":
-        if _accumulator >= FULL_PAUSE:
+        if _accumulator >= _params["full_pause"]:
             _fade_step   = 0
             _state       = "fading"
             _accumulator = 0.0
 
     elif _state == "fading":
-        if _accumulator < FADE_DELAY:
+        if _accumulator < _params["fade_delay"]:
             return
         _accumulator = 0.0
         f = max(0.0, 1.0 - _fade_step / FADE_STEPS)

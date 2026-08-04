@@ -18,14 +18,18 @@ import math
 import random
 import threading
 import requests
-from .shared import COLS, ROWS, xy, lerp_color, scale, hsv_to_rgb
+from .shared import COLS, ROWS, xy, lerp_color, scale, hsv_to_rgb, INT, make_param_store
 
 FRAME_DELAY      = 0.05
 NAME             = "Weather"
 
 LATITUDE         = 51.4416
 LONGITUDE        = 5.4697
-REFRESH_SECONDS  = 30 * 60
+
+PARAMS = [
+    ("refresh_seconds", INT(60, 3600), 30 * 60),   # how often to re-fetch weather data
+]
+_params, get_params, set_param = make_param_store(PARAMS)
 
 # ── Temperature display layout ────────────────────────────────────────────────
 
@@ -123,7 +127,7 @@ def _fetch():
 def _refresh_loop():
     while True:
         success = _fetch()
-        time.sleep(REFRESH_SECONDS if success else 60)
+        time.sleep(_params["refresh_seconds"] if success else 60)
 
 # ── Frame buffer ──────────────────────────────────────────────────────────────
 

@@ -3,15 +3,19 @@ animations/spiral.py — Radar sweep spiral
 """
 
 import math
-from .shared import COLS, ROWS, xy, hsv_to_rgb
+from .shared import COLS, ROWS, xy, hsv_to_rgb, INT, FLOAT, make_param_store
 
 FRAME_DELAY    = 0.05
 NAME           = "Spiral"
 
-ROTATION_SPEED = 0.05
-NUM_ARMS       = 3
-ARM_WIDTH      = 0.4
-TRAIL_DECAY    = 0.2
+PARAMS = [
+    ("rotation_speed", FLOAT(0.005, 0.3), 0.15),  # sweep speed
+    ("num_arms",       INT(1, 6),         1),     # how many arms sweep at once
+    ("arm_width",      FLOAT(0.1, 1.0),   0.3),   # angular thickness of each arm
+    ("trail_decay",    FLOAT(0.05, 0.5),  0.2),   # how quickly the trail fades behind each arm
+]
+_params, get_params, set_param = make_param_store(PARAMS)
+
 CYCLE_COLOR    = True
 COLOR_SPEED    = 0.003
 ARM_COLOR      = (0, 200, 255)
@@ -43,11 +47,15 @@ def init():
 
 def frame(pixels, dt):
     global _sweep_angle, _hue
+    trail_decay = _params["trail_decay"]
+    arm_width   = _params["arm_width"]
+    num_arms    = _params["num_arms"]
+
     for r in range(ROWS):
         for c in range(COLS):
-            _buf[r][c][0] *= (1.0 - TRAIL_DECAY)
-            _buf[r][c][1] *= (1.0 - TRAIL_DECAY)
-            _buf[r][c][2] *= (1.0 - TRAIL_DECAY)
+            _buf[r][c][0] *= (1.0 - trail_decay)
+            _buf[r][c][1] *= (1.0 - trail_decay)
+            _buf[r][c][2] *= (1.0 - trail_decay)
 
     if CYCLE_COLOR:
         cr, cg, cb = hsv_to_rgb(_hue)
@@ -55,13 +63,13 @@ def frame(pixels, dt):
     else:
         color = tuple(v/255 for v in ARM_COLOR)
 
-    for arm in range(NUM_ARMS):
-        arm_angle = (_sweep_angle + arm * math.pi*2/NUM_ARMS) % (math.pi*2)
+    for arm in range(num_arms):
+        arm_angle = (_sweep_angle + arm * math.pi*2/num_arms) % (math.pi*2)
         for r in range(ROWS):
             for c in range(COLS):
                 diff = abs(_angle_diff(_cell_angle[r][c], arm_angle))
-                if diff < ARM_WIDTH:
-                    af       = (1 + math.cos(math.pi*diff/ARM_WIDTH)) / 2
+                if diff < arm_width:
+                    af       = (1 + math.cos(math.pi*diff/arm_width)) / 2
                     df       = _cell_dist[r][c] / _max_dist
                     boost    = 1.0 + (TIP_BOOST-1.0) * df
                     strength = af * df * boost
@@ -77,5 +85,5 @@ def frame(pixels, dt):
                 int(min(1.0,_buf[r][c][2])*255),
             )
     pixels.show()
-    _sweep_angle = (_sweep_angle + ROTATION_SPEED) % (math.pi*2)
+    _sweep_angle = (_sweep_angle + _params["rotation_speed"]) % (math.pi*2)
     _hue         = (_hue + COLOR_SPEED) % 1.0

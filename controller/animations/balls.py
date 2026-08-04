@@ -4,15 +4,19 @@ animations/balls.py — Bouncing coloured balls with trails
 
 import math
 import random
-from .shared import COLS, ROWS, xy
+from .shared import COLS, ROWS, xy, INT, FLOAT, make_param_store
 
 FRAME_DELAY   = 0.05
 NAME          = "Bouncing Balls"
 
-NUM_BALLS     = 6
+PARAMS = [
+    ("num_balls", INT(2, 15),     6),    # ball count (takes effect on next init/reactivate)
+    ("speed_min", FLOAT(0.1, 2.0), 0.4), # slowest possible ball speed (new balls only)
+    ("speed_max", FLOAT(0.1, 3.0), 0.9), # fastest possible ball speed (new balls only)
+]
+_params, get_params, set_param = make_param_store(PARAMS)
+
 TRAIL_FALLOFF = [1.0, 0.45, 0.18, 0.06]
-SPEED_MIN     = 0.4
-SPEED_MAX     = 0.9
 
 BALL_COLORS = [
     (255,40,40),(255,160,0),(220,220,0),(0,220,0),
@@ -25,7 +29,8 @@ class _Ball:
         self.x     = random.uniform(0, COLS-1)
         self.y     = random.uniform(0, ROWS-1)
         angle      = random.uniform(0, math.pi*2)
-        speed      = random.uniform(SPEED_MIN, SPEED_MAX)
+        lo, hi     = sorted((_params["speed_min"], _params["speed_max"]))
+        speed      = random.uniform(lo, hi)
         self.vx    = math.cos(angle) * speed
         self.vy    = math.sin(angle) * speed
         self.color = random.choice(BALL_COLORS)
@@ -73,9 +78,20 @@ _balls = []
 
 def init():
     global _balls
-    _balls = [_Ball() for _ in range(NUM_BALLS)]
+    _balls = [_Ball() for _ in range(_params["num_balls"])]
+
+def _reconcile_ball_count():
+    """Grow/shrink _balls to match the live param without disturbing balls
+    already in flight — so changing num_balls doesn't reset their
+    positions/trails, and no mode switch is needed for it to take effect."""
+    target = _params["num_balls"]
+    while len(_balls) < target:
+        _balls.append(_Ball())
+    while len(_balls) > target:
+        _balls.pop()
 
 def frame(pixels, dt):
+    _reconcile_ball_count()
     buf = [[(0,0,0)]*COLS for _ in range(ROWS)]
     for ball in _balls:
         ball.step()

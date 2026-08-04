@@ -14,6 +14,10 @@ Endpoints:
     POST /slideshow/interval/{s}  — set slideshow interval (1–60s)
     POST /brightness/{value}      — set brightness (0.0–1.0), switches to manual
     POST /brightness/auto         — switch to auto (hour-based) brightness
+    GET  /modules/tree             — group/mode hierarchy with has_params flags
+    GET  /params/{name}           — a module's adjustable parameters + current values
+    POST /params/{name}           — set one parameter, body: {"key":..., "value":...}
+    POST /modules/{name}/reset    — force the module to re-init() with current param values
 
 Dependencies:
     sudo pip3 install fastapi uvicorn psutil
@@ -140,6 +144,32 @@ def post_brightness(value: float):
     print(f"  -> [API] Brightness: {value:.2f} (manual)")
     return _ctrl["get_status"](_pixels)
 
+@app.get("/modules/tree")
+def get_modules_tree():
+    return {"groups": _ctrl["get_params_tree"]()}
+
+@app.get("/params/{name}")
+def get_module_params(name: str):
+    return {"params": _ctrl["list_module_params"](name)}
+
+@app.post("/params/{name}")
+def post_module_param(name: str, body: dict):
+    if "key" not in body or "value" not in body:
+        raise HTTPException(status_code=400, detail="Body must include 'key' and 'value'")
+    try:
+        _ctrl["set_module_param"](name, body["key"], body["value"])
+    except (KeyError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"ok": True}
+
+@app.post("/modules/{name}/reset")
+def post_module_reset(name: str):
+    try:
+        _ctrl["reset_module"](name)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"ok": True}
+
 # ── Web UI ────────────────────────────────────────────────────────────────────
 
 @app.get("/", response_class=HTMLResponse)
@@ -227,11 +257,19 @@ HTML_UI = """<!DOCTYPE html>
   .mode-btn.active { border-color: #0cf; color: #0cf; background: #0a1f22; }
 
   #btn-next-group {
-    margin-top: 12px;
+    flex: 1;
     border-color: #444;
     color: #aaa;
   }
   #btn-next-group:active { border-color: #fc0; color: #fc0; }
+
+  #btn-reset-current {
+    flex: 1;
+    color: #f84;
+    border-color: #632;
+  }
+  #btn-reset-current:hover  { background: #1a0f08; }
+  #btn-reset-current:active { border-color: #f84; color: #f84; }
 
   /* Slideshow */
   .toggle-row { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
@@ -248,6 +286,57 @@ HTML_UI = """<!DOCTYPE html>
   button.active-green { border-color: #0f0; color: #0f0; background: #0a1a0a; }
   button.active-red   { border-color: #f44; color: #f44; background: #1a0a0a; }
   button.active-cyan  { border-color: #0cf; color: #0cf; background: #0a1f22; }
+
+  /* Module parameters panel */
+  #params-toggle {
+    width: 100%;
+    text-align: left;
+    color: #aaa;
+    border-color: #444;
+    margin-top: 4px;
+  }
+  #params-panel {
+    display: none;
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 12px;
+    margin-top: 8px;
+    background: #161616;
+  }
+  #params-panel.open { display: block; }
+
+  #params-select {
+    width: 100%;
+    background: #1a1a1a;
+    color: #ccc;
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 8px;
+    font-size: 0.85rem;
+    margin-bottom: 12px;
+  }
+  #params-select option:disabled { color: #444; }
+
+  .param-row { margin-bottom: 12px; }
+  .param-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.78rem;
+    color: #888;
+    margin-bottom: 4px;
+  }
+  .param-label .param-val { color: #0cf; }
+  .param-row input[type=text] {
+    width: 100%;
+    background: #1a1a1a;
+    color: #eee;
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 8px;
+    font-size: 0.85rem;
+  }
+  .param-empty { font-size: 0.8rem; color: #555; font-style: italic; }
+  .param-toggle-wrap { display: flex; align-items: center; gap: 8px; }
 
   /* System stats bar */
   #sys-bar {
@@ -279,7 +368,10 @@ HTML_UI = """<!DOCTYPE html>
 
 <h2>Modes</h2>
 <div id="mode-sections"></div>
-<button id="btn-next-group" onclick="api('/group/next')">Next Group →</button>
+<div class="toggle-row">
+  <button id="btn-next-group" onclick="api('/group/next')">Next Group →</button>
+  <button id="btn-reset-current" onclick="resetCurrentMode()">↺ Reset Current</button>
+</div>
 
 <h2>Slideshow</h2>
 <div class="toggle-row">
@@ -303,6 +395,13 @@ HTML_UI = """<!DOCTYPE html>
   <input type="range" id="brightness" min="0" max="100" value="80"
          oninput="onBrightness(this.value)">
   <span class="slider-val" id="brightness-val">80%</span>
+</div>
+
+<h2>Module Settings</h2>
+<button id="params-toggle" onclick="toggleParamsPanel()">⚙ Module Parameters ▾</button>
+<div id="params-panel">
+  <select id="params-select" onchange="onSelectModule(this.value)"></select>
+  <div id="params-fields"></div>
 </div>
 
 <!-- System stats fixed bottom bar -->
@@ -354,7 +453,10 @@ HTML_UI = """<!DOCTYPE html>
     });
   }
 
+  let _currentMode = null;
+
   function updateUI(s) {
+    _currentMode = s.mode;
     document.getElementById("s-group").textContent = s.group;
     document.getElementById("s-mode").textContent  = s.mode;
 
@@ -405,10 +507,181 @@ HTML_UI = """<!DOCTYPE html>
     );
   }
 
+  // ── Module parameters panel ────────────────────────────────────────────
+  // Fully independent of the live mode/slideshow — selecting a module here
+  // never switches what's rendering, and slideshow/mode changes never
+  // touch this panel. The user opens it, picks a module, edits it; if they
+  // want to see it live they disable slideshow and pick that mode manually.
+
+  let _selectedParamModule = null;
+  const _paramTimers = {};
+
+  function toggleParamsPanel() {
+    const panel = document.getElementById("params-panel");
+    const open  = panel.classList.toggle("open");
+    if (open && !_selectedParamModule) {
+      fetchParamsTree();
+    }
+  }
+
+  async function fetchParamsTree() {
+    const res  = await fetch("/modules/tree");
+    const data = await res.json();
+    const sel  = document.getElementById("params-select");
+    sel.innerHTML = "";
+
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "Select a module…";
+    placeholder.disabled = true;
+    placeholder.selected = !_selectedParamModule;
+    sel.appendChild(placeholder);
+
+    data.groups.forEach(g => {
+      const optgroup = document.createElement("optgroup");
+      optgroup.label = g.name;
+      g.modes.forEach(m => {
+        const opt = document.createElement("option");
+        opt.value = m.name;
+        opt.textContent = m.name + (m.has_params ? "" : " (no settings)");
+        opt.disabled = !m.has_params;
+        if (m.name === _selectedParamModule) opt.selected = true;
+        optgroup.appendChild(opt);
+      });
+      sel.appendChild(optgroup);
+    });
+
+    if (_selectedParamModule) {
+      loadModuleParams(_selectedParamModule);
+    }
+  }
+
+  function onSelectModule(name) {
+    _selectedParamModule = name || null;
+    loadModuleParams(name);
+  }
+
+  async function loadModuleParams(name) {
+    const fields = document.getElementById("params-fields");
+    fields.innerHTML = "";
+    if (!name) return;
+
+    const res  = await fetch("/params/" + encodeURIComponent(name));
+    const data = await res.json();
+
+    if (!data.params.length) {
+      fields.innerHTML = '<div class="param-empty">No adjustable parameters.</div>';
+      return;
+    }
+
+    data.params.forEach(p => fields.appendChild(renderParamField(name, p)));
+  }
+
+  // "This looks stuck, kick it" — resets whatever's actually rendering right
+  // now (tracked from /status polling), regardless of what's selected in the
+  // settings panel above.
+  async function resetCurrentMode() {
+    if (!_currentMode || _currentMode === "—") return;
+    try {
+      await fetch("/modules/" + encodeURIComponent(_currentMode) + "/reset", {
+        method: "POST",
+      });
+    } catch(e) { console.error(e); }
+  }
+
+  function renderParamField(moduleName, p) {
+    const row = document.createElement("div");
+    row.className = "param-row";
+
+    if (p.type === "TEXT") {
+      const label = document.createElement("div");
+      label.className = "param-label";
+      label.innerHTML = `<span>${p.key}</span>`;
+      const input = document.createElement("input");
+      input.type = "text";
+      input.value = p.value;
+      input.oninput = () => debouncedSetParam(moduleName, p.key, input.value);
+      row.appendChild(label);
+      row.appendChild(input);
+
+    } else if (p.type === "INT" || p.type === "FLOAT") {
+      const label = document.createElement("div");
+      label.className = "param-label";
+      const valSpan = document.createElement("span");
+      valSpan.className = "param-val";
+      valSpan.textContent = p.value;
+      label.innerHTML = `<span>${p.key}</span>`;
+      label.appendChild(valSpan);
+
+      const input = document.createElement("input");
+      input.type = "range";
+      input.min  = p.min;
+      input.max  = p.max;
+      input.step = p.type === "INT" ? 1 : (p.max - p.min) / 100;
+      input.value = p.value;
+      input.oninput = () => {
+        valSpan.textContent = p.type === "INT" ? input.value : parseFloat(input.value).toFixed(2);
+        debouncedSetParam(moduleName, p.key, input.value);
+      };
+      row.appendChild(label);
+      row.appendChild(input);
+
+    } else if (p.type === "BOOL") {
+      const wrap = document.createElement("div");
+      wrap.className = "param-toggle-wrap";
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.checked = !!p.value;
+      input.onchange = () => setParam(moduleName, p.key, input.checked);
+      const label = document.createElement("span");
+      label.className = "param-label";
+      label.style.marginBottom = "0";
+      label.textContent = p.key;
+      wrap.appendChild(input);
+      wrap.appendChild(label);
+      row.appendChild(wrap);
+
+    } else if (p.type === "CHOICE") {
+      const label = document.createElement("div");
+      label.className = "param-label";
+      label.innerHTML = `<span>${p.key}</span>`;
+      const select = document.createElement("select");
+      select.style.cssText = "width:100%;background:#1a1a1a;color:#ccc;border:1px solid #333;border-radius:6px;padding:8px;font-size:0.85rem;";
+      p.options.forEach(opt => {
+        const o = document.createElement("option");
+        o.value = opt;
+        o.textContent = opt;
+        if (opt === p.value) o.selected = true;
+        select.appendChild(o);
+      });
+      select.onchange = () => setParam(moduleName, p.key, select.value);
+      row.appendChild(label);
+      row.appendChild(select);
+    }
+
+    return row;
+  }
+
+  function debouncedSetParam(moduleName, key, value) {
+    const timerKey = moduleName + ":" + key;
+    clearTimeout(_paramTimers[timerKey]);
+    _paramTimers[timerKey] = setTimeout(() => setParam(moduleName, key, value), 300);
+  }
+
+  async function setParam(moduleName, key, value) {
+    try {
+      await fetch("/params/" + encodeURIComponent(moduleName), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key, value }),
+      });
+    } catch(e) { console.error(e); }
+  }
+
   async function pollStatus() {
     try {
       const res = await fetch("/status");
-      if (res.ok) updateUI(await res.json());
+     if (res.ok) updateUI(await res.json());
     } catch(e) {}
     setTimeout(pollStatus, 3000);
   }

@@ -4,15 +4,19 @@ animations/ripple.py — Expanding colour ripples
 
 import math
 import random
-from .shared import COLS, ROWS, xy
+from .shared import COLS, ROWS, xy, INT, FLOAT, make_param_store
 
 FRAME_DELAY  = 0.05
 NAME         = "Ripple"
 
-MAX_RIPPLES  = 4
-SPAWN_CHANCE = 0.08
-RIPPLE_SPEED = 0.4
-RING_WIDTH   = 1.2
+PARAMS = [
+    ("max_ripples",  INT(1, 10),        5),      # how many ripples can be alive at once
+    ("spawn_chance", FLOAT(0.0, 1.0),   0.1),    # chance per frame to spawn a new one
+    ("ripple_speed", FLOAT(0.1, 2.0),   0.4),    # radius growth per frame
+    ("ring_width",   FLOAT(0.3, 3.0),   1.5),    # thickness of each ring
+]
+_params, get_params, set_param = make_param_store(PARAMS)
+
 MAX_RADIUS   = math.sqrt(COLS**2 + ROWS**2)
 
 RIPPLE_COLORS = [
@@ -33,16 +37,17 @@ class _Ripple:
         self.active = True
 
     def step(self):
-        self.radius += RIPPLE_SPEED
-        if self.radius - RING_WIDTH > MAX_RADIUS:
+        self.radius += _params["ripple_speed"]
+        if self.radius - _params["ring_width"] > MAX_RADIUS:
             self.active = False
 
     def contribution(self, col, row):
+        ring_width = _params["ring_width"]
         dist  = math.sqrt((col - self.cx)**2 + (row - self.cy)**2)
         delta = abs(dist - self.radius)
-        if delta > RING_WIDTH:
+        if delta > ring_width:
             return 0.0
-        brightness = (1 + math.cos(math.pi * delta / RING_WIDTH)) / 2
+        brightness = (1 + math.cos(math.pi * delta / ring_width)) / 2
         age_fade   = max(0.0, 1.0 - self.radius / MAX_RADIUS)
         return brightness * age_fade
 
@@ -54,7 +59,7 @@ def init():
 
 def frame(pixels, dt):
     global _ripples
-    if len(_ripples) < MAX_RIPPLES and random.random() < SPAWN_CHANCE:
+    if len(_ripples) < _params["max_ripples"] and random.random() < _params["spawn_chance"]:
         _ripples.append(_Ripple())
     for col in range(COLS):
         for row in range(ROWS):

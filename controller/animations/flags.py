@@ -10,19 +10,23 @@ Dependencies: none beyond shared
 
 import math
 import random
-from .shared import COLS, ROWS, xy
+from .shared import COLS, ROWS, xy, FLOAT, make_param_store
 
 FRAME_DELAY   = 0.04
 NAME          = "Flags"
 
 # ── Wave parameters ───────────────────────────────────────────────────────────
 
-BRIGHTNESS_WAVE_SPEED = 1.8    # how fast the wave travels left→right
-BRIGHTNESS_WAVE_FREQ  = 1.6    # spatial frequency (cycles across the flag)
+PARAMS = [
+    ("wave_speed",     FLOAT(0.1, 5.0), 1.8),   # how fast the wave travels left→right
+    ("wave_freq",      FLOAT(0.2, 4.0), 1.6),   # spatial frequency (cycles across the flag)
+    ("cycle_duration", FLOAT(1.0, 20.0), 5.0),  # seconds each flag is shown before cross-fading
+]
+_params, get_params, set_param = make_param_store(PARAMS)
+
 BRIGHTNESS_MIN        = 0.4    # darkest point of the wave
 BRIGHTNESS_MAX        = 1.0    # brightest point
 
-CYCLE_DURATION = 5.0           # seconds per flag
 FADE_DURATION  = 1.5           # seconds for cross-fade between flags
 
 # ── Flag definitions ──────────────────────────────────────────────────────────
@@ -199,8 +203,8 @@ def _render_flag(flag, t):
     for col in range(COLS):
         wave_brightness = BRIGHTNESS_MIN + (BRIGHTNESS_MAX - BRIGHTNESS_MIN) * (
             math.sin(
-                col / COLS * math.pi * 2 * BRIGHTNESS_WAVE_FREQ
-                - t * BRIGHTNESS_WAVE_SPEED
+                col / COLS * math.pi * 2 * _params["wave_freq"]
+                - t * _params["wave_speed"]
             ) * 0.5 + 0.5
         )
         norm_v = (col + 0.5) / COLS
@@ -249,7 +253,7 @@ def frame(pixels, dt):
     next_flag    = FLAGS[(_flag_index + 1) % len(FLAGS)]
 
     if _state == "showing":
-        if _flag_time >= CYCLE_DURATION:
+        if _flag_time >= _params["cycle_duration"]:
             _state     = "fading"
             _fade_time = 0.0
         buf = _render_flag(current_flag, _t)
